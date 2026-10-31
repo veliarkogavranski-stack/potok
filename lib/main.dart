@@ -377,7 +377,9 @@ void main(List<String> args) async {
 const String _demoText =
     'Скорочтение это навык читать быстрее без потери понимания смысла. '
     'Текст подаётся по одному слову, глаза остаются на месте. '
-    'Красная буква в центре слова это точка распознавания, она всегда на одной оси. ';
+    'Красная буква в центре слова это точка распознавания, она всегда на одной оси. \n\n'
+    'Вместо движений глаз по строке слово само приходит в центр зрения. '
+    'Знаки препинания дают паузы, длинные слова держатся чуть дольше. ';
 
 class PotokApp extends StatelessWidget {
   final String? demoText;
@@ -389,9 +391,24 @@ class PotokApp extends StatelessWidget {
         darkTheme: ThemeData(useMaterial3: true, brightness: Brightness.dark),
         themeMode: ThemeMode.dark,
         home: demoText != null
-            ? ReaderScreen(text: demoText! * 20, autoplay: true)
+            ? ReaderScreen(text: _buildDemoText(demoText!), autoplay: true)
             : const HomeScreen(),
       );
+}
+
+// Демо-книга: нумерованные главы на базе демо-абзаца, чтобы оглавление было живым.
+String _buildDemoText(String paragraph) {
+  const titles = [
+    'Точка распознавания', 'Как это работает', 'Ритм и паузы',
+    'Скорость и понимание', 'Привычка глаза', 'Практика каждый день',
+  ];
+  final sb = StringBuffer();
+  for (var i = 0; i < titles.length; i++) {
+    sb.write('# Глава ${i + 1}. ${titles[i]}\n\n');
+    sb.write(paragraph);
+    sb.write('\n\n');
+  }
+  return sb.toString();
 }
 
 // ---- Разбор текста ----

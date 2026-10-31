@@ -4,6 +4,12 @@ RSVP speed-reading app: words are shown one at a time at a fixed focal point, so
 
 **Languages:** Russian, English, German, Polish (follows the system language).
 
+## Screenshots
+
+| Home | Reader | Outline |
+| --- | --- | --- |
+| ![Home](screenshots/home.png) | ![Reader](screenshots/reader.png) | ![Outline](screenshots/outline.png) |
+
 ## Features
 
 - RSVP reading with an ORP (optimal recognition point) - the focus letter is always on the same axis
