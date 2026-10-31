@@ -1,0 +1,354 @@
+// «Поток» - MVP скорочтения (RSVP). Один файл, без внешних пакетов.
+// Положить в lib/main.dart проекта `flutter create potok`.
+import 'dart:async';
+import 'dart:collection';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
+void main() => runApp(const PotokApp());
+
+class PotokApp extends StatelessWidget {
+  const PotokApp({super.key});
+  @override
+  Widget build(BuildContext context) => MaterialApp(
+        title: 'Поток',
+        theme: ThemeData(useMaterial3: true, brightness: Brightness.light),
+        darkTheme: ThemeData(useMaterial3: true, brightness: Brightness.dark),
+        themeMode: ThemeMode.dark, // тёмная по умолчанию, меняется кнопкой
+        home: const HomeScreen(),
+      );
+}
+
+// ---- Разбор текста ----
+
+class Chunk {
+  final String word; // показываемое слово
+  final int orpIndex; // индекс фокусной буквы
+  final double delayFactor; // множитель базовой задержки
+  Chunk(this.word, this.orpIndex, this.delayFactor);
+}
+
+int _orp(String w) => w.isEmpty ? 0 : ((w.length * 0.4).floor()).clamp(0, w.length - 1);
+
+bool _isDigitish(String w) => RegExp(r'^[\d\s.,:;%+\-/()]+$').hasFormat(w) ||
+    RegExp(r'\d').hasMatch(w);
+
+bool _isAbbrev(String w) {
+  final clean = w.replaceAll(RegExp(r'[.,!?"''()]'), '');
+  if (clean.length <= 1) return true;
+  if (clean == clean.toUpperCase() && RegExp(r'^[А-ЯЁA-Z]{2,4}\.?').hasMatch(clean)) return true;
+  return false;
+}
+
+/// Разбивка текста на показываемые чанки с ORP и множителями пауз.
+List<Chunk> parseText(String text, int chunkSize) {
+  final chunks = <Chunk>[];
+  final paragraphs = text.split(RegExp(r'\n\s*\n'));
+  for (final para in paragraphs) {
+    final words = para.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+    for (var i = 0; i < words.length; i += chunkSize) {
+      final group = words.sublist(i, (i + chunkSize).clamp(0, words.length));
+      final joined = group.join(' ');
+      var f = 1.0;
+      final last = group.last;
+      if (RegExp(r'[.!?…]["'')\]]?$').hasMatch(last)) f = 2.5;
+      else if (RegExp(r'[,;:—-]["'')\]]?$').hasMatch(last)) f = 1.5;
+      final endOfPara = i + chunkSize >= words.length;
+      if (endOfPara) f = f < 3 ? 3 : f;
+      if (joined.length > 13) f += 1.0;
+      if (_isDigitish(joined) || _isAbbrev(joined)) f += 0.8;
+      chunks.add(Chunk(joined, _orp(joined), f));
+    }
+  }
+  return chunks;
+}
+
+// ---- Экран ввода ----
+
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key});
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  final _controller = TextEditingController();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Поток - вставь текст')),
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(children: [
+          Expanded(
+            child: TextField(
+              controller: _controller,
+              maxLines: null,
+              expands: true,
+              textAlignVertical: TextAlignVertical.top,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                hintText: 'Вставь книгу, статью, любой текст...',
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          FilledButton.icon(
+            icon: const Icon(Icons.play_arrow),
+            label: const Text('Читать'),
+            onPressed: () => _start(context),
+          ),
+        ]),
+      ),
+    );
+  }
+
+  void _start(BuildContext context) {
+    final text = _controller.text.trim();
+    if (text.isEmpty) return;
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => ReaderScreen(text: text),
+    ));
+  }
+}
+
+// ---- Экран чтения ----
+
+class ReaderScreen extends StatefulWidget {
+  final String text;
+  const ReaderScreen({super.key, required this.text});
+  @override
+  State<ReaderScreen> createState() => _ReaderScreenState();
+}
+
+class _ReaderScreenState extends State<ReaderScreen> {
+  static const double _baseWpm = 300;
+  double wpm = _baseWpm;
+  double fontSize = 44;
+  int chunkSize = 1;
+  bool dark = true;
+
+  late List<Chunk> chunks;
+  int index = 0;
+  bool playing = false;
+  Timer? timer;
+  final Stopwatch _session = Stopwatch();
+  int _wordsShown = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    chunks = parseText(widget.text, chunkSize);
+    FocusTraversalGroup(policy: _NoTraversal()); // чтобы стрелки не гуляли по UI
+  }
+
+  @override
+  void dispose() {
+    timer?.cancel();
+    _session.stop();
+    super.dispose();
+  }
+
+  Duration get step {
+    const base = Duration(milliseconds: 60000); // 60 c / wpm
+    final ms = (base.inMilliseconds / wpm).round();
+    return Duration(milliseconds: (ms * chunks[index].delayFactor).round());
+  }
+
+  void _tick() {
+    if (index < chunks.length - 1) {
+      setState(() {
+        index++;
+        _wordsShown += chunkSize;
+      });
+      timer?.cancel();
+      timer = Timer(step, _tick);
+    } else {
+      _pause();
+      _showStats();
+    }
+  }
+
+  void _play() {
+    if (playing) return;
+    setState(() => playing = true);
+    _session.start();
+    timer = Timer(step, _tick);
+  }
+
+  void _pause() {
+    timer?.cancel();
+    _session.stop();
+    setState(() => playing = false);
+  }
+
+  void _toggle() => playing ? _pause() : _play();
+
+  void _seek(int delta) {
+    timer?.cancel();
+    if (playing) {
+      setState(() => index = (index + delta).clamp(0, chunks.length - 1));
+      timer = Timer(step, _tick);
+    } else {
+      setState(() => index = (index + delta).clamp(0, chunks.length - 1));
+    }
+  }
+
+  void _replaySentence() {
+    // откат к ближайшей границе после «конца предложения»
+    var i = index;
+    while (i > 0 && chunks[i - 1].delayFactor < 2.5) i--;
+    timer?.cancel();
+    setState(() => index = i);
+    if (playing) timer = Timer(step, _tick);
+  }
+
+  Future<void> _showStats() async {
+    final secs = _session.elapsedMilliseconds / 1000;
+    final speed = secs > 0 ? (_wordsShown / secs * 60).round() : 0;
+    await showDialog(context: context, builder: (_) => AlertDialog(
+      title: const Text('Сессия завершена'),
+      content: Text('Слов прочитано: $_wordsShown\nВремя: ${secs.toStringAsFixed(0)} с\nСредняя скорость: $speed слов/мин'),
+      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Закрыть'))],
+    ));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final chunk = chunks[index];
+    return Focus(
+      autofocus: true,
+      onKeyEvent: (node, event) {
+        if (event is! KeyDownEvent) return KeyEventResult.ignored;
+        switch (event.logicalKey) {
+          case LogicalKeyboardKey.space: _toggle(); return KeyEventResult.handled;
+          case LogicalKeyboardKey.arrowRight: _seek(chunkSize); return KeyEventResult.handled;
+          case LogicalKeyboardKey.arrowLeft: _seek(-chunkSize); return KeyEventResult.handled;
+          case LogicalKeyboardKey.arrowUp: setState(() => wpm = (wpm + 25).clamp(100, 1500)); return KeyEventResult.handled;
+          case LogicalKeyboardKey.arrowDown: setState(() => wpm = (wpm - 25).clamp(100, 1500)); return KeyEventResult.handled;
+          case LogicalKeyboardKey.keyB: _replaySentence(); return KeyEventResult.handled;
+        }
+        return KeyEventResult.ignored;
+      },
+      child: Scaffold(
+        backgroundColor: dark ? const Color(0xFF101216) : Colors.white,
+        body: GestureDetector(
+          onTap: _toggle,
+          onHorizontalDragEnd: (d) {
+            final v = d.primaryVelocity ?? 0;
+            if (v < 0) _seek(chunkSize);
+            if (v > 0) _seek(-chunkSize);
+          },
+          child: Column(children: [
+            // Фокус-зона: направляющие линии
+            Expanded(
+              flex: 3,
+              child: Stack(alignment: Alignment.center, children: [
+                Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  Container(height: 1.5, color: dark ? Colors.white24 : Colors.black12),
+                  const SizedBox(height: 24),
+                  _WordView(chunk: chunk, fontSize: fontSize, dark: dark),
+                  const SizedBox(height: 24),
+                  Container(height: 1.5, color: dark ? Colors.white24 : Colors.black12),
+                ]),
+                // Вертикальная ось ORP
+                Positioned.fill(child: Center(child: SizedBox(
+                  height: 140, width: 1, color: Colors.red.withOpacity(0.35),
+                ))),
+              ]),
+            ),
+            // Управление
+            SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  Row(children: [
+                    IconButton(onPressed: () => _seek(-chunkSize), icon: const Icon(Icons.skip_previous)),
+                    IconButton(onPressed: _toggle, icon: Icon(playing ? Icons.pause : Icons.play_arrow)),
+                    IconButton(onPressed: () => _seek(chunkSize), icon: const Icon(Icons.skip_next)),
+                    TextButton(onPressed: _replaySentence, child: const Text('B: предложение')),
+                    const Spacer(),
+                    Text('Индекс ORP')], // placeholder removed below
+                  ),
+                  SizedBox(height: 6),
+                  Row(children: [
+                    const Text('Скорость'),
+                    Expanded(child: Slider(
+                      value: wpm, min: 100, max: 1500, divisions: 56,
+                      label: '${wpm.round()} WPM',
+                      onChanged: (v) => setState(() => wpm = v),
+                    )),
+                    Text('${wpm.round()}'),
+                  ]),
+                  Row(children: [
+                    const Text('Шрифт'),
+                    Expanded(child: Slider(
+                      value: fontSize, min: 24, max: 72,
+                      onChanged: (v) => setState(() => fontSize = v),
+                    )),
+                  ]),
+                  LinearProgressIndicator(value: chunks.isEmpty ? 0 : (index + 1) / chunks.length),
+                  Text('слово ${index + 1} из ${chunks.length} · осталось ~${_etaText()}', style: const TextStyle(fontSize: 12)),
+                  Row(children: [
+                    TextButton(
+                      onPressed: () => setState(() { dark = !dark; }),
+                      child: Text(dark ? 'Светлая тема' : 'Тёмная тема'),
+                    ),
+                    TextButton(
+                      onPressed: () { timer?.cancel(); Navigator.pop(context); },
+                      child: const Text('Выход'),
+                    ),
+                  ]),
+                ]),
+              ),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  String _etaText() {
+    var ms = 0.0;
+    for (var i = index + 1; i < chunks.length; i++) {
+      ms += (60000 / wpm) * chunks[i].delayFactor;
+    }
+    final s = ms / 1000;
+    if (s < 90) return '${s.round()} с';
+    return '${(s / 60).round()} мин';
+  }
+}
+
+class _WordView extends StatelessWidget {
+  final Chunk chunk;
+  final double fontSize;
+  final bool dark;
+  const _WordView({required this.chunk, required this.fontSize, required this.dark});
+
+  @override
+  Widget build(BuildContext context) {
+    final w = chunk.word;
+    final i = chunk.orpIndex.clamp(0, w.isEmpty ? 0 : w.length - 1);
+    final before = w.substring(0, i);
+    final focus = w.substring(i, i + 1);
+    final after = w.substring(i + 1);
+    // Сдвиг, чтобы фокусная буква встала на ось: левая часть шире - сдвиг влево.
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      Flexible(child: Text(before, maxLines: 1, softWrap: false, overflow: TextOverflow.clip,
+        style: _style(color: dark ? Colors.white70 : Colors.black54))),
+      Text(focus, style: _style(color: Colors.redAccent, weight: FontWeight.bold)),
+      Flexible(child: Text(after, maxLines: 1, softWrap: false, overflow: TextOverflow.clip,
+        style: _style(color: dark ? Colors.white70 : Colors.black54))),
+    ]);
+  }
+
+  TextStyle _style({required Color color, FontWeight weight = FontWeight.w400}) =>
+      TextStyle(fontSize: fontSize, height: 1.2, color: color, fontWeight: weight, fontFamily: 'Consolas');
+}
+
+// Заглушка для фокуса: ничего не делает, оставлена, чтобы Tab не уводил фокус.
+class _NoTraversal extends FocusTraversalPolicy {
+  @override
+  FocusNode? findFirstFocusInDirection(FocusNode node, FocusTraversalDirection direction) => null;
+}
