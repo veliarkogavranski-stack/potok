@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.30
+
+- Renamed to Stream Reader (app title, Android label, Windows window title)
+
 ## 1.0.29
 - Localization: English, German, Polish added; the app follows the system language (Russian is the fallback).
 - Materials for publishing on GitHub: README, LICENSE, CHANGELOG, CI workflow.

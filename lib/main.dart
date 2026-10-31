@@ -23,7 +23,7 @@ String _detectedLang() {
 }
 
 const Map<String, String> _trRu = {
-  'appName': 'Поток',
+  'appName': 'Stream Reader',
   'continueTitle': 'ПРОДОЛЖИТЬ ЧТЕНИЕ',
   'emptyList': 'Список пуст.',
   'word': 'слово',
@@ -78,7 +78,7 @@ const Map<String, String> _trRu = {
 };
 
 const Map<String, String> _trEn = {
-  'appName': 'Flow',
+  'appName': 'Stream Reader',
   'continueTitle': 'RESUME READING',
   'emptyList': 'List is empty.',
   'word': 'word',
@@ -133,7 +133,7 @@ const Map<String, String> _trEn = {
 };
 
 const Map<String, String> _trDe = {
-  'appName': 'Flow',
+  'appName': 'Stream Reader',
   'continueTitle': 'WEITERLESEN',
   'emptyList': 'Liste ist leer.',
   'word': 'Wort',
@@ -188,7 +188,7 @@ const Map<String, String> _trDe = {
 };
 
 const Map<String, String> _trPl = {
-  'appName': 'Flow',
+  'appName': 'Stream Reader',
   'continueTitle': 'KONTYNUUJ CZYTANIE',
   'emptyList': 'Lista jest pusta.',
   'word': 'słowo',

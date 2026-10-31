@@ -1,6 +1,6 @@
-# Поток / Flow
+# Stream Reader (Поток)
 
-RSVP speed-reading app: words are shown one at a time at a fixed focal point, so your eyes never move. Built with Flutter, one screen, no accounts, works offline.
+Stream Reader is an RSVP speed-reading app: words are shown one at a time at a fixed focal point, so your eyes never move. Built with Flutter, one screen, no accounts, works offline.
 
 **Languages:** Russian, English, German, Polish (follows the system language).
 
