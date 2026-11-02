@@ -420,8 +420,23 @@ class Chunk {
   const Chunk(this.word, this.orpIndex, this.delayFactor);
 }
 
-int _orp(String w) =>
-    w.isEmpty ? 0 : ((w.length * 0.4).floor()).clamp(0, w.length - 1);
+int _orp(String w) {
+  if (w.isEmpty) return 0;
+  final target = (w.length * 0.4).floor().clamp(0, w.length - 1);
+  final letter = RegExp(r'[0-9A-Za-zА-ЯЁа-яё]');
+  var best = -1;
+  var bestDist = 1 << 30;
+  for (var k = 0; k < w.length; k++) {
+    if (letter.hasMatch(w[k])) {
+      final d = (k - target).abs();
+      if (d < bestDist) {
+        bestDist = d;
+        best = k;
+      }
+    }
+  }
+  return best >= 0 ? best : target;
+}
 
 bool _isNumericLike(String w) => RegExp(r'\d').hasMatch(w);
 

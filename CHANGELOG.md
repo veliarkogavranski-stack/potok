@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.31
+
+- Fixed: some words flashed without the red focus letter (ORP landed on a punctuation/digit character). ORP now always picks the nearest actual letter to the 0.4-length position.
+
 ## 1.0.30
 
 - Renamed to Stream Reader (app title, Android label, Windows window title)
